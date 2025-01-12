@@ -24,6 +24,20 @@ struct AppleMusicCLI {
 
     static func fetchPlayHistory() async {
         do {
+            // Load existing data from JSON file if it exists
+            let fileManager = FileManager.default
+            let jsonFilePath = "playHistory.json"
+            var savedArtistPlayCounts: [String: Int] = [:]
+            var savedSongPlayCounts: [String: Int] = [:]
+
+            if fileManager.fileExists(atPath: jsonFilePath) {
+                if let data = try? Data(contentsOf: URL(fileURLWithPath: jsonFilePath)),
+                   let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                    savedArtistPlayCounts = json["artists"] as? [String: Int] ?? [:]
+                    savedSongPlayCounts = json["songs"] as? [String: Int] ?? [:]
+                }
+            }
+
             // Request recently played songs
             let request = MusicLibraryRequest<Song>()
             let response = try await request.response()
@@ -43,6 +57,15 @@ struct AppleMusicCLI {
                 }
             }
 
+            // Update totals as Apple Music - saved data
+            for (artist, count) in savedArtistPlayCounts {
+                artistPlayCounts[artist, default: 0] -= count
+            }
+
+            for (song, count) in savedSongPlayCounts {
+                songPlayCounts[song, default: 0] -= count
+            }
+
             // Sort and get top 20 artists
             let sortedArtists = artistPlayCounts.sorted { $0.value > $1.value }
             let topArtists = Array(sortedArtists.prefix(20))
@@ -50,6 +73,18 @@ struct AppleMusicCLI {
             // Sort and get top 20 songs
             let sortedSongs = songPlayCounts.sorted { $0.value > $1.value }
             let topSongs = Array(sortedSongs.prefix(20))
+
+            // Save updated data to JSON file only if it does not exist
+            if !fileManager.fileExists(atPath: jsonFilePath) {
+                let updatedData: [String: Any] = [
+                    "artists": artistPlayCounts,
+                    "songs": songPlayCounts,
+                    "dateWritten": ISO8601DateFormatter().string(from: Date())
+                ]
+                if let jsonData = try? JSONSerialization.data(withJSONObject: updatedData, options: .prettyPrinted) {
+                    try? jsonData.write(to: URL(fileURLWithPath: jsonFilePath))
+                }
+            }
 
             print("\nTop 20 Artists by Total Listens:")
             for (artist, totalPlays) in topArtists {
